@@ -55,39 +55,65 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
         {
             ContinuousController.instance.isRandomMatch = true;
 
-            if (!PhotonNetwork.IsConnected)
+            // A bot match needs a Photon room only because the surrounding code addresses
+            // players through PhotonNetwork.PlayerList. PUN's offline mode provides exactly
+            // that locally: IsMasterClient becomes true, CreateRoom builds a local room and
+            // RpcTarget.All executes handlers on this client. Skipping the master server
+            // removes the network dependency and the room handshake latency.
+            //
+            // Note: PhotonNetwork.InLobby does NOT account for offline mode, so the lobby
+            // wait in the online branch must be skipped or it never returns.
+            if (HeadlessConfig.Enabled && HeadlessConfig.UseOfflineAI)
             {
-                yield return ContinuousController.instance.StartCoroutine(PhotonUtility.ConnectToMasterServerCoroutine());
-            }
-
-            yield return new WaitWhile(() => !PhotonNetwork.IsConnectedAndReady);
-
-            if (!PhotonNetwork.InLobby)
-            {
-                PhotonNetwork.JoinLobby();
-            }
-
-            yield return new WaitWhile(() => !PhotonNetwork.InLobby);
-
-            if (!PhotonNetwork.InRoom)
-            {
-                //Setting up the room to be created
-                RoomOptions roomOptions = new RoomOptions
+                if (!PhotonNetwork.OfflineMode)
                 {
-                    IsVisible = false,   //Make the room invisible in the lobby.
-                    IsOpen = false,      //Not Allow other players to enter the room
-                    PublishUserId = true,
+                    PhotonNetwork.OfflineMode = true;
+                }
 
-                    MaxPlayers = 1
-                };
+                if (!PhotonNetwork.InRoom)
+                {
+                    PhotonNetwork.CreateRoom("offline-ai", new RoomOptions { MaxPlayers = 1 }, null);
+                }
 
-                string RoomName = StringUtils.GeneratePassword_AlpahabetNum(50);
-
-                //Create Room
-                PhotonNetwork.CreateRoom(RoomName, roomOptions, null);
+                yield return new WaitWhile(() => !PhotonNetwork.InRoom);
             }
 
-            yield return new WaitWhile(() => !PhotonNetwork.InRoom);
+            else
+            {
+                if (!PhotonNetwork.IsConnected)
+                {
+                    yield return ContinuousController.instance.StartCoroutine(PhotonUtility.ConnectToMasterServerCoroutine());
+                }
+
+                yield return new WaitWhile(() => !PhotonNetwork.IsConnectedAndReady);
+
+                if (!PhotonNetwork.InLobby)
+                {
+                    PhotonNetwork.JoinLobby();
+                }
+
+                yield return new WaitWhile(() => !PhotonNetwork.InLobby);
+
+                if (!PhotonNetwork.InRoom)
+                {
+                    //Setting up the room to be created
+                    RoomOptions roomOptions = new RoomOptions
+                    {
+                        IsVisible = false,   //Make the room invisible in the lobby.
+                        IsOpen = false,      //Not Allow other players to enter the room
+                        PublishUserId = true,
+
+                        MaxPlayers = 1
+                    };
+
+                    string RoomName = StringUtils.GeneratePassword_AlpahabetNum(50);
+
+                    //Create Room
+                    PhotonNetwork.CreateRoom(RoomName, roomOptions, null);
+                }
+
+                yield return new WaitWhile(() => !PhotonNetwork.InRoom);
+            }
         }
         #endregion
 
@@ -225,7 +251,12 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
         #region 乱数列初期化
         if (PhotonNetwork.IsMasterClient)
         {
-            ContinuousController.instance.GetComponent<PhotonView>().RPC("SetRandom", RpcTarget.All, RandomUtility.GetSecureRandom());
+            // In batch mode the seed comes from the harness so a game can be replayed exactly.
+            long gameSeed = HeadlessConfig.Enabled
+                ? HeadlessConfig.CurrentSeed
+                : RandomUtility.GetSecureRandom();
+
+            ContinuousController.instance.GetComponent<PhotonView>().RPC("SetRandom", RpcTarget.All, gameSeed);
         }
 
         yield return new WaitWhile(() => !ContinuousController.instance.DoneSetRandom);
@@ -345,6 +376,11 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
     IEnumerator StartGame()
     {
         PlayLog.OnAddLog?.Invoke($"\n-------------Turn: 0-------------\n");
+
+        // Earliest point at which seats and the game context both exist. Providers need the
+        // seat assignment before the first decision, and the mulligan is already a decision.
+        DecisionRouter.ResetCounters();
+        DecisionRouter.NotifyGameStart(gameContext);
 #if UNITY_EDITOR
         //gameContext.TurnPlayer = GManager.instance.Opponent;
 #endif
@@ -727,7 +763,7 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
 
             yield return new WaitWhile(() => !GManager.instance.showPhaseNotificationObject.isClose);
 
-            if (gameContext.TurnPlayer.isYou)
+            if (HeadlessHooks.UsesInteractiveUI(gameContext.TurnPlayer))
             {
                 #region If hatching is possible
                 if (gameContext.TurnPlayer.CanHatch || !gameContext.TurnPlayer.CanMove)
@@ -778,14 +814,27 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                 #region AI
                 if (GManager.instance.IsAI)
                 {
-                    bool doHatch = RandomUtility.IsSucceedProbability(0.85f);
-
-                    if (gameContext.TurnPlayer.CanHatch)
+                    // Hatching and promoting are real strategic choices - the breeding area is
+                    // the only free source of Digimon - so a bridged seat decides them itself.
+                    // The engine only ever offers one bit here, hence a two-option request.
+                    if (DecisionRouter.ChooseBool(gameContext.TurnPlayer,
+                            new List<bool>() { true, false }, "breeding_hatch", out bool remoteHatch,
+                            DecisionKind.Breeding))
                     {
-                        doHatch = true;
+                        SetBreedingPhase(gameContext.TurnPlayer.PlayerID, remoteHatch);
                     }
 
-                    SetBreedingPhase(gameContext.TurnPlayer.PlayerID, doHatch);
+                    else
+                    {
+                        bool doHatch = RandomUtility.IsSucceedProbability(0.85f);
+
+                        if (gameContext.TurnPlayer.CanHatch)
+                        {
+                            doHatch = true;
+                        }
+
+                        SetBreedingPhase(gameContext.TurnPlayer.PlayerID, doHatch);
+                    }
                 }
                 #endregion
             }
@@ -983,7 +1032,10 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                     yield break;
                 }
 
-                if (!GManager.instance.IsAI || gameContext.TurnPlayer.isYou)
+                // The extra disjunct lets a bridged seat use the same queue a networked human
+                // player uses, instead of writing this state machine's fields from outside.
+                if (!GManager.instance.IsAI || gameContext.TurnPlayer.isYou
+                    || DecisionRouter.HasProvider(gameContext.TurnPlayer))
                 {
                     if (gameContext.TurnPlayer.HasMainPhaseAction())
                     {
@@ -991,8 +1043,17 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                     }
                 }
 
+                // True while an external provider owns this decision - either still thinking
+                // or having already queued its action. The built-in bot must stand down for
+                // as long as that holds; it takes over again only if the provider declines.
+                bool providerOwnsDecision = DecisionRouter.PollMainPhase(this, gameContext.TurnPlayer);
+
                 #region AIモード
-                if (GManager.instance.IsAI && !gameContext.TurnPlayer.isYou)
+                // In batch mode the bot logic drives both seats. Normally it only plays the
+                // opponent, because the local player acts through the UI - which in a headless
+                // run would simply never answer.
+                if (GManager.instance.IsAI && !providerOwnsDecision &&
+                    (!gameContext.TurnPlayer.isYou || HeadlessConfig.Enabled))
                 {
                     if (RandomUtility.IsSucceedProbability(0.99f))
                     {
@@ -1011,7 +1072,7 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
 
                             if (CanAttackPermenents.Count >= 1)
                             {
-                                AttackingPermanent = CanAttackPermenents[UnityEngine.Random.Range(0, CanAttackPermenents.Count)];
+                                AttackingPermanent = CanAttackPermenents[GameRandom.Range(0, CanAttackPermenents.Count)];
 
                                 bool isSecurityAttack = true;
 
@@ -1042,7 +1103,7 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                                 {
                                     if (DefendingPermanentCandidates.Count >= 1)
                                     {
-                                        DefendingPermanent = DefendingPermanentCandidates[UnityEngine.Random.Range(0, DefendingPermanentCandidates.Count)];
+                                        DefendingPermanent = DefendingPermanentCandidates[GameRandom.Range(0, DefendingPermanentCandidates.Count)];
                                     }
 
                                     else
@@ -1063,7 +1124,14 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                         }
 
 #if UNITY_EDITOR
-                        AttackingPermanent = null;
+                        // Upstream debug leftover: in the editor this cancels every attack the
+                        // bot just picked, so no security is ever checked and games cannot end.
+                        // It also makes editor runs disagree with standalone builds, which is
+                        // fatal for a measurement harness.
+                        if (!HeadlessConfig.Enabled)
+                        {
+                            AttackingPermanent = null;
+                        }
 #endif
 
                         if (AttackingPermanent == null)
@@ -1125,7 +1193,7 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
 
                                                 if (frameIDCandidates.Count >= 1)
                                                 {
-                                                    TargetFrameID = frameIDCandidates[UnityEngine.Random.Range(0, frameIDCandidates.Count)];
+                                                    TargetFrameID = frameIDCandidates[GameRandom.Range(0, frameIDCandidates.Count)];
 
                                                     if (gameContext.TurnPlayer.fieldCardFrames[TargetFrameID].IsEmptyFrame())
                                                     {
@@ -1156,7 +1224,18 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                 }
                 #endregion
 
-                else
+                // `!providerOwnsDecision` jest tu KONIECZNE, nie kosmetyczne.
+                //
+                // Ta galaz konczy ture natychmiast dla miejsca "You" w trybie auto - bo pierwotnie
+                // dochodzilo sie do niej tylko wtedy, gdy nikt nie mial zagrac. Po dodaniu warunku
+                // `!providerOwnsDecision` do galezi bota trafial tu takze przypadek "provider
+                // wlasnie mysli", wiec tura miejsca 0 konczyla sie, zanim agent zdazyl odpowiedziec.
+                //
+                // Objaw: miejsce 0 dostawalo JEDNA decyzje na partie zamiast dwudziestu kilku
+                // i nie wygralo ani razu na 40 partii, przy zerowej liczbie odmow. Wykryte przez
+                // porownanie rozkladow (D7), niewidoczne wczesniej, bo do tej pory miejsce 0
+                // zawsze bylo obslugiwane przez wbudowanego bota.
+                else if (!providerOwnsDecision)
                 {
                     if (gameContext.TurnPlayer.isYou && GManager.instance.isAuto && GManager.instance.IsAI)
                     {
@@ -1296,6 +1375,11 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
         #region Parameter reset
         void ResetMainPhaseParameter()
         {
+            // One provider decision per pass through the main-phase loop. This call is what
+            // marks the boundary between them; without it a declined decision would stay
+            // declined for the rest of the turn.
+            DecisionRouter.ResetMainPhase();
+
             GManager.instance.OffTargetArrow();
 
             GManager.instance.memoryObject.OffMemoryPredictionLine();
@@ -3328,6 +3412,18 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
 
         endGame = true;
 
+        // Reported before the UI teardown below, so the batch harness still records a result
+        // if any of the presentation code fails without a display.
+        HeadlessHooks.RaiseGameEnded(new HeadlessHooks.GameEndInfo
+        {
+            WinnerPlayerId = Winner != null ? Winner.PlayerID : -1,
+            WinnerName = Winner != null ? Winner.PlayerName : null,
+            WinnerIsYou = Winner != null && Winner.isYou,
+            Surrendered = Surrendered,
+            EffectName = effectName,
+            TurnCount = TurnCount,
+        });
+
         if (gameContext.TurnPlayer != null)
         {
             OffFieldCardTarget(gameContext.TurnPlayer);
@@ -3346,7 +3442,12 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
 
         GManager.instance.resultObject.ShowResult(Winner, Surrendered, effectName);
 
-        EventSystem.current.SetSelectedGameObject(GManager.instance.resultObject.transform.GetChild(3).gameObject);
+        // EventSystem.current is null when running with -nographics, and an exception here
+        // would skip the coroutine teardown below and leave the match hanging.
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(GManager.instance.resultObject.transform.GetChild(3).gameObject);
+        }
 
         GManager.instance.commandText.CloseCommandText();
 
@@ -3356,7 +3457,10 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
 
         ContinuousController.instance.StartCoroutine(GManager.instance.BattleBGM.FadeOut(1));
 
-        if (GManager.instance.isAuto && GManager.instance.IsAI)
+        // HeadlessRunner owns the match loop and does its own additive load/unload, so this
+        // soak-test style reload must stay out of its way. A non-additive LoadScene here would
+        // also drop the Opening scene that the harness depends on.
+        if (GManager.instance.isAuto && GManager.instance.IsAI && !HeadlessConfig.Enabled)
         {
             ContinuousController.instance.isAI = true;
             UnityEngine.SceneManagement.SceneManager.LoadScene("BattleScene");

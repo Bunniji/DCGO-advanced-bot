@@ -106,7 +106,7 @@ public class UserSelectionManager : MonoBehaviourPunCallbacks
         _selectPlayer = selectPlayer;
         _isLocal = IsLocal;
 
-        if (selectPlayer.isYou)
+        if (HeadlessHooks.UsesInteractiveUI(selectPlayer))
         {
             GManager.instance.commandText.OpenCommandText(selectPlayerMessage);
 
@@ -134,8 +134,16 @@ public class UserSelectionManager : MonoBehaviourPunCallbacks
                     canSelectValue.Add(selectionElement.Value);
                 }
 
-                int value = canSelectValue.Count >= 1 ? canSelectValue[UnityEngine.Random.Range(0, canSelectValue.Count)] : 0;
-                SendSelection(value);
+                if (DecisionRouter.ChooseInt(selectPlayer, canSelectValue, "select_int", out int remote))
+                {
+                    SendSelection(remote);
+                }
+
+                else
+                {
+                    int value = canSelectValue.Count >= 1 ? canSelectValue[GameRandom.Range(0, canSelectValue.Count)] : 0;
+                    SendSelection(value);
+                }
             }
             #endregion
         }
@@ -160,7 +168,7 @@ public class UserSelectionManager : MonoBehaviourPunCallbacks
         _selectPlayer = selectPlayer;
         _isLocal = IsLocal;
 
-        if (selectPlayer.isYou)
+        if (HeadlessHooks.UsesInteractiveUI(selectPlayer))
         {
             GManager.instance.commandText.OpenCommandText(selectPlayerMessage);
 
@@ -188,8 +196,16 @@ public class UserSelectionManager : MonoBehaviourPunCallbacks
                     canSelectValue.Add(selectionElement.Value);
                 }
 
-                bool value = canSelectValue.Count >= 1 ? canSelectValue[UnityEngine.Random.Range(0, canSelectValue.Count)] : false;
-                SendSelection(value);
+                if (DecisionRouter.ChooseBool(selectPlayer, canSelectValue, "select_bool", out bool remote))
+                {
+                    SendSelection(remote);
+                }
+
+                else
+                {
+                    bool value = canSelectValue.Count >= 1 ? canSelectValue[GameRandom.Range(0, canSelectValue.Count)] : false;
+                    SendSelection(value);
+                }
             }
             #endregion
         }

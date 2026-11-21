@@ -110,7 +110,19 @@ public class OptionalSkill : MonoBehaviourPunCallbacks
 
             if (GManager.instance.IsAI)
             {
-                SetUseOptional(player.PlayerID, RandomUtility.IsSucceedProbability(0.9f));
+                // "May" effects are a genuine choice, not a formality - declining is sometimes
+                // right, and DCGO's fixed 90% acceptance is exactly the kind of hard-coded
+                // taste an agent is supposed to replace.
+                if (DecisionRouter.ChooseBool(player, new List<bool>() { true, false },
+                        "optional_skill", out bool remoteUse))
+                {
+                    SetUseOptional(player.PlayerID, remoteUse);
+                }
+
+                else
+                {
+                    SetUseOptional(player.PlayerID, RandomUtility.IsSucceedProbability(0.9f));
+                }
             }
         }
 

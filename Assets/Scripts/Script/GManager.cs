@@ -269,6 +269,18 @@ public class GManager : MonoBehaviourPun
             isAuto = false;
         }
 
+        // Batch mode drives both seats, so the local player must not stop at UI prompts.
+        // isAuto is what routes the mulligan, the phase advance and the end-of-turn for the
+        // "You" side to their automatic paths instead of opening a panel.
+        if (HeadlessConfig.Enabled && IsAI)
+        {
+            isAuto = true;
+        }
+
+        // Attaches whatever the configuration says should answer for each seat. Does nothing
+        // unless the bridge was explicitly turned on, so the ordinary game is unaffected.
+        DecisionBridge.SetupForGame();
+
         turnStateMachine = gameObject.AddComponent<TurnStateMachine>();
 
         GetComponent<Effects>().Init();

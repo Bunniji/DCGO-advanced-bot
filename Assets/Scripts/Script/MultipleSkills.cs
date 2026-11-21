@@ -186,7 +186,7 @@ public class MultipleSkills : MonoBehaviourPunCallbacks
                     // Blast Digivolution
                     if (IsOnlyHandEffectStacked && IsOnlyOptionalEffectStacked && IsEachStackedEffectHasDistinctSourceCard)
                     {
-                        if (player.isYou)
+                        if (HeadlessHooks.UsesInteractiveUI(player))
                         {
                             int skillIndex = 0;
 
@@ -263,7 +263,7 @@ public class MultipleSkills : MonoBehaviourPunCallbacks
 
                     else
                     {
-                        if (player.isYou)
+                        if (HeadlessHooks.UsesInteractiveUI(player))
                         {
                             int skillIndex = -1;
 

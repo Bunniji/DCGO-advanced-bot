@@ -292,7 +292,7 @@ public class SelectPermanentEffect : MonoBehaviourPunCallbacks
 
             GManager.instance.turnStateMachine.IsSelecting = true;
 
-            if (_selectPlayer.isYou)
+            if (HeadlessHooks.UsesInteractiveUI(_selectPlayer))
             {
                 #region Message display
                 if (!string.IsNullOrEmpty(_customMessage))
@@ -641,9 +641,42 @@ public class SelectPermanentEffect : MonoBehaviourPunCallbacks
                         }
                     }
 
+                    // Provider path, single-permanent selections only - see the matching note
+                    // in SelectCardEffect.AutoSelect for why subsets are out of scope.
+                    // This is the decision that actually matters in the ST-1/ST-2 pool: it is
+                    // where "which Digimon does this effect hit" is answered.
+                    //
+                    // A flag rather than an early return: the coroutine must still fall through
+                    // to the WaitUntil/Dequeue below, because SetTargetFrames answers by
+                    // queueing a PermanentSelection that the same coroutine then consumes.
+                    bool answeredByProvider = false;
+
+                    if (_maxCount == 1 && ValidCharas.Count > 0)
+                    {
+                        int picked = DecisionRouter.ChoosePermanent(_selectPlayer, ValidCharas, "select_permanent");
+
+                        if (picked >= 0)
+                        {
+                            List<Permanent> chosenCharas = new List<Permanent>() { ValidCharas[picked] };
+
+                            if ((_canEndSelectCondition == null || _canEndSelectCondition(chosenCharas))
+                                && ValidCharas[picked].TopCard != null)
+                            {
+                                Permanent chosen = ValidCharas[picked];
+
+                                SetTargetFrames(
+                                    _selectPlayer.PlayerID,
+                                    new bool[] { chosen.TopCard.Owner == GManager.instance.turnStateMachine.gameContext.TurnPlayer },
+                                    new int[] { chosen.TopCard.Owner.GetFieldPermanents().IndexOf(chosen) });
+
+                                answeredByProvider = true;
+                            }
+                        }
+                    }
+
                     IList<int> indexList = Enumerable.Range(0, ValidCharas.Count).ToList();
 
-                    if (ValidCharas.Count >= _maxCount)
+                    if (!answeredByProvider && ValidCharas.Count >= _maxCount)
                     {
                         for (int i = 0; i < 200; i++)
                         {

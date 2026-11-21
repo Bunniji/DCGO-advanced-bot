@@ -377,7 +377,7 @@ public class SelectCardEffect : MonoBehaviourPunCallbacks
                 GManager.instance.turnStateMachine.gameContext.IsSecurityLooking = true;
             }
 
-            if (_selectPlayer.isYou)
+            if (HeadlessHooks.UsesInteractiveUI(_selectPlayer))
             {
                 if ((_isDeckBottom && ContinuousController.instance.autoDeckBottomOrder)
                 || (_isDeckTop && ContinuousController.instance.autoDeckTopOrder))
@@ -599,6 +599,41 @@ public class SelectCardEffect : MonoBehaviourPunCallbacks
                     if (CanSelectCard(cardSource))
                     {
                         ValidCards.Add(cardSource);
+                    }
+                }
+
+                // Provider path, single-card selections only.
+                //
+                // Scope limit, stated rather than hidden: asking for a SUBSET of size k is a
+                // different question from asking for one option out of n, and the whole bridge
+                // is built on the second. Every card selection reachable with the ST-1/ST-2
+                // pool asks for exactly one card, so supporting the general case would be
+                // untested code guarding against a situation these decks cannot produce.
+                // Multi-card selections keep DCGO's own random choice and are counted as
+                // declines, so a wider card pool makes the gap visible instead of silent.
+                if (_maxCount == 1 && ValidCards.Count > 0)
+                {
+                    int picked = DecisionRouter.ChooseCard(_selectPlayer, ValidCards, "select_card:" + _mode);
+
+                    if (picked >= 0)
+                    {
+                        List<CardSource> chosenCards = new List<CardSource>() { ValidCards[picked] };
+
+                        if (_canEndSelectCondition == null || _canEndSelectCondition(chosenCards))
+                        {
+                            int[] chosenIndices = new int[] { ValidCards[picked].CardIndex };
+
+                            if (GManager.instance.IsAI || _isLocal)
+                            {
+                                SetTargetCardAndIndicies(_selectPlayer.PlayerID, chosenIndices, null);
+                            }
+                            else
+                            {
+                                photonView.RPC("SetTargetCardAndIndicies", RpcTarget.All, _selectPlayer.PlayerID, chosenIndices, null);
+                            }
+
+                            return;
+                        }
                     }
                 }
 

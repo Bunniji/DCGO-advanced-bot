@@ -526,6 +526,10 @@ public class ContinuousController : MonoBehaviour
         Application.targetFrameRate = 60;
         long random = RandomUtility.GetSecureRandom();
         GameRandom.Seed(random);
+        // Only HeadlessRunner used to publish the seed, so in GUI mode the bridge reported a
+        // constant 1 for every game. Human sessions (D17) run in GUI mode, so without this the
+        // recorded seed is meaningless and no game can ever be replayed.
+        HeadlessConfig.CurrentSeed = random;
         Debug.Log($"Game Initialize - random number sequence initialization, GameRandom.Seed:{random}");
 
         Sprite reverseCardSprite = await StreamingAssetsUtility.GetSprite("card_back_main");
@@ -1181,6 +1185,7 @@ public class ContinuousController : MonoBehaviour
 
         long random = RandomUtility.GetSecureRandom();
         GameRandom.Seed(random);
+        HeadlessConfig.CurrentSeed = random;   // patrz komentarz w Init()
         Debug.Log($"random number sequence initialization, GameRandom.Seed:{random}");
 
         var unload = SceneManager.UnloadSceneAsync("BattleScene");

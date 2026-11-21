@@ -113,7 +113,7 @@ public class SelectCountEffect : MonoBehaviourPunCallbacks
 
                 else
                 {
-                    if (_selectPlayer.isYou)
+                    if (HeadlessHooks.UsesInteractiveUI(_selectPlayer))
                     {
                         if ((!_isDigivolutionCost && ContinuousController.instance.autoMaxCardCount && !_preferMin)
                         || (_isDigivolutionCost && ContinuousController.instance.autoMinDigivolutionCost && _preferMin))
@@ -149,8 +149,16 @@ public class SelectCountEffect : MonoBehaviourPunCallbacks
                         #region AI���[�h
                         if (GManager.instance.IsAI)
                         {
-                            int preferedNumber = _preferMin ? candidates.Min() : candidates.Max();
-                            SetCount(_selectPlayer.PlayerID, preferedNumber);
+                            if (DecisionRouter.ChooseInt(_selectPlayer, candidates, "select_count", out int remoteCount))
+                            {
+                                SetCount(_selectPlayer.PlayerID, remoteCount);
+                            }
+
+                            else
+                            {
+                                int preferedNumber = _preferMin ? candidates.Min() : candidates.Max();
+                                SetCount(_selectPlayer.PlayerID, preferedNumber);
+                            }
                         }
                         #endregion
 

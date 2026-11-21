@@ -203,6 +203,14 @@ public class Player : MonoBehaviour
 
     public T DequeuePlayerSelection<T>() where T : class, IPlayerSelection
     {
+        // Callers already handle a null result (see the breeding phase), and a waiting
+        // coroutine can be released by a phase change rather than by an actual selection,
+        // which leaves the queue empty. Matches DequeueMainPhaseAction above.
+        if (_playerSelectionQueue.Count == 0)
+        {
+            return null;
+        }
+
         IPlayerSelection playerSelection = _playerSelectionQueue.Dequeue();
         if (playerSelection is not T)
         {
