@@ -10,20 +10,23 @@ public static class IEnumerableExtension
     #region Get random element from list
     public static IEnumerable<T> GetRandom<T>(this IEnumerable<T> list, int count)
     {
-        var random = new System.Random();
+        // Uses the seeded GameRandom rather than an unseeded System.Random. This method sits
+        // in the automatic selection paths, so a clock-seeded generator here would make a
+        // game unreproducible even when the deck shuffle and every other roll are seeded.
+        var source = list.ToList();
 
         var indexList = new List<int>();
-        for (int i = 0; i < list.ToList().Count; i++)
+        for (int i = 0; i < source.Count; i++)
         {
             indexList.Add(i);
         }
 
-        for (int i = 0; i < count; i++)
+        for (int i = 0; i < count && indexList.Count > 0; i++)
         {
-            int index = random.Next(0, indexList.Count);
+            int index = GameRandom.Range(0, indexList.Count);
             int value = indexList[index];
             indexList.RemoveAt(index);
-            yield return list.ToList()[value];
+            yield return source[value];
         }
     }
     #endregion

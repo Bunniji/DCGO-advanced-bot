@@ -183,7 +183,7 @@ public class SelectHandEffect : MonoBehaviourPunCallbacks
                 GManager.instance.turnStateMachine.OffHandCardTarget(player);
             }
 
-            if (_selectPlayer.isYou)
+            if (HeadlessHooks.UsesInteractiveUI(_selectPlayer))
             {
                 GManager.instance.sideBar.SetUpSideBar();
 
@@ -527,7 +527,21 @@ public class SelectHandEffect : MonoBehaviourPunCallbacks
 
                         List<int> CardIDs = null;
 
-                        if (ValidCards.Count >= _maxCount)
+                        // Provider path, single-card selections only - same scope limit as in
+                        // SelectCardEffect.AutoSelect. This is where "which card do I discard"
+                        // is answered, which for a deck that pays costs from hand is not a
+                        // detail: the wrong discard can cost the game two turns later.
+                        if (_maxCount == 1 && ValidCards.Count > 0)
+                        {
+                            int picked = DecisionRouter.ChooseCard(_selectPlayer, ValidCards, "select_hand");
+
+                            if (picked >= 0 && CanEndSelect(new List<CardSource>() { ValidCards[picked] }))
+                            {
+                                CardIDs = new List<int>() { ValidCards[picked].CardIndex };
+                            }
+                        }
+
+                        if (CardIDs == null && ValidCards.Count >= _maxCount)
                         {
                             for (int i = 0; i < 1000; i++)
                             {

@@ -437,7 +437,7 @@ public class SelectAttackEffect : MonoBehaviourPunCallbacks
                                 {
                                     if (!_attacker.CanAttackTargetDigimon(null, _cardEffect, _withoutTap, _isVortex) || (_attacker.TopCard.Owner.Enemy.SecurityCards.Count >= 3 && RandomUtility.IsSucceedProbability(0.5f)))
                                     {
-                                        selectedPermanent = AttackcTargetCandidates[UnityEngine.Random.Range(0, AttackcTargetCandidates.Count)];
+                                        selectedPermanent = AttackcTargetCandidates[GameRandom.Range(0, AttackcTargetCandidates.Count)];
                                     }
                                 }
 

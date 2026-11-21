@@ -22,7 +22,15 @@ public class CardObjectController : MonoBehaviour
 
         if (GManager.instance.IsAI)
         {
-            if (ContinuousController.instance.DeckDatas.Count((deckData) => deckData.IsValidDeckData()) > 0)
+            // The batch harness pins the bot's deck so a matchup is reproducible. Without an
+            // override DCGO picks a random deck out of the local saved list, which would make
+            // every run a different experiment.
+            if (HeadlessHooks.OpponentDeckOverride != null)
+            {
+                RandomDeck = HeadlessHooks.OpponentDeckOverride;
+            }
+
+            else if (ContinuousController.instance.DeckDatas.Count((deckData) => deckData.IsValidDeckData()) > 0)
             {
                 List<DeckData> deckDatas = new List<DeckData>();
 
@@ -34,7 +42,7 @@ public class CardObjectController : MonoBehaviour
                     }
                 }
 
-                DeckData randomDeck = deckDatas[UnityEngine.Random.Range(0, deckDatas.Count)];
+                DeckData randomDeck = deckDatas[GameRandom.Range(0, deckDatas.Count)];
 
                 RandomDeck = new DeckData(randomDeck.GetThisDeckCode(), randomDeck.DeckID);
 
@@ -77,7 +85,7 @@ public class CardObjectController : MonoBehaviour
                 {
                     for (int i = 0; i < 50; i++)
                     {
-                        mainDeckCards.Add(mainDeckCandidates[UnityEngine.Random.Range(0, mainDeckCandidates.Count)]);
+                        mainDeckCards.Add(mainDeckCandidates[GameRandom.Range(0, mainDeckCandidates.Count)]);
                     }
                 }
 
@@ -85,7 +93,7 @@ public class CardObjectController : MonoBehaviour
                 {
                     for (int i = 0; i < 5; i++)
                     {
-                        digitamaDeckCards.Add(digitamaDeckCandidates[UnityEngine.Random.Range(0, digitamaDeckCandidates.Count)]);
+                        digitamaDeckCards.Add(digitamaDeckCandidates[GameRandom.Range(0, digitamaDeckCandidates.Count)]);
                     }
                 }
 

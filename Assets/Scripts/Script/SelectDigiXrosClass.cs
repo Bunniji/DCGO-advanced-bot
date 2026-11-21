@@ -536,7 +536,7 @@ public class SelectDigiXrosClass : MonoBehaviourPunCallbacks
                                     indexes.Add(k);
                                 }
 
-                                SetTargetDigiXrossIndex(card.Owner.PlayerID, UnityEngine.Random.Range(0, indexes.Count));
+                                SetTargetDigiXrossIndex(card.Owner.PlayerID, GameRandom.Range(0, indexes.Count));
                             }
                             #endregion
                         }
