@@ -484,6 +484,9 @@ public class SelectHandEffect : MonoBehaviourPunCallbacks
                     {
                         _noSelect = true;
 
+                        // "Up to N" from hand is never offered to a provider.
+                        DecisionRouter.CountUnrouted(_selectPlayer, "hand_up_to");
+
                         for (int maxCount = 0; maxCount < _maxCount; maxCount++)
                         {
                             IList<int> indexList = Enumerable.Range(0, ValidCards.Count).ToList();
@@ -533,12 +536,26 @@ public class SelectHandEffect : MonoBehaviourPunCallbacks
                         // detail: the wrong discard can cost the game two turns later.
                         if (_maxCount == 1 && ValidCards.Count > 0)
                         {
+                            if (_canNoSelect)
+                            {
+                                DecisionRouter.CountUnrouted(_selectPlayer, "decline_not_offered");
+                            }
+
                             int picked = DecisionRouter.ChooseCard(_selectPlayer, ValidCards, "select_hand");
 
                             if (picked >= 0 && CanEndSelect(new List<CardSource>() { ValidCards[picked] }))
                             {
                                 CardIDs = new List<int>() { ValidCards[picked].CardIndex };
                             }
+                            else if (picked >= 0)
+                            {
+                                DecisionRouter.CountUnrouted(_selectPlayer, "pick_rejected");
+                            }
+                        }
+                        else if (_maxCount > 1 && ValidCards.Count > 0)
+                        {
+                            DecisionRouter.CountUnrouted(_selectPlayer,
+                                ValidCards.Count > _maxCount ? "subset_hand" : "subset_hand_forced");
                         }
 
                         if (CardIDs == null && ValidCards.Count >= _maxCount)

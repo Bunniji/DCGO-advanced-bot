@@ -418,6 +418,8 @@ public class SelectAttackEffect : MonoBehaviourPunCallbacks
                             #region AI
                             if (GManager.instance.IsAI)
                             {
+                                DecisionRouter.CountUnrouted(attackOwner, "attack_target");
+
                                 List<Permanent> AttackcTargetCandidates = new List<Permanent>();
 
                                 foreach (Player player in GManager.instance.turnStateMachine.gameContext.Players_ForTurnPlayer)

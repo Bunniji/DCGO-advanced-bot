@@ -609,10 +609,16 @@ public class SelectCardEffect : MonoBehaviourPunCallbacks
                 // is built on the second. Every card selection reachable with the ST-1/ST-2
                 // pool asks for exactly one card, so supporting the general case would be
                 // untested code guarding against a situation these decks cannot produce.
-                // Multi-card selections keep DCGO's own random choice and are counted as
-                // declines, so a wider card pool makes the gap visible instead of silent.
+                // Multi-card selections keep DCGO's own random choice. They are not declines -
+                // the provider is never asked - and are counted by DecisionRouter.CountUnrouted.
                 if (_maxCount == 1 && ValidCards.Count > 0)
                 {
+                    // Selecting nothing is legal here, but the provider is offered only the cards.
+                    if (DecisionRouter.HasProvider(_selectPlayer) && _canNoSelect != null && _canNoSelect())
+                    {
+                        DecisionRouter.CountUnrouted(_selectPlayer, "decline_not_offered");
+                    }
+
                     int picked = DecisionRouter.ChooseCard(_selectPlayer, ValidCards, "select_card:" + _mode);
 
                     if (picked >= 0)
@@ -634,7 +640,15 @@ public class SelectCardEffect : MonoBehaviourPunCallbacks
 
                             return;
                         }
+
+                        // The pick failed the effect's end condition; DCGO decides instead.
+                        DecisionRouter.CountUnrouted(_selectPlayer, "pick_rejected");
                     }
+                }
+                else if (_maxCount > 1 && ValidCards.Count > 0)
+                {
+                    DecisionRouter.CountUnrouted(_selectPlayer,
+                        ValidCards.Count > _maxCount ? "subset_card" : "subset_card_forced");
                 }
 
                 IList<int> indexList = Enumerable.Range(0, ValidCards.Count).ToList();

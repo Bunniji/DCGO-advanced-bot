@@ -155,6 +155,15 @@ public class HeadlessRunner : MonoBehaviour
             yield break;
         }
 
+        // A deck that was asked for but not found must stop the run. Carrying on lets DCGO pick
+        // the bot's deck at random, and the results then describe a matchup nobody requested.
+        if (deck1 == null && !string.IsNullOrEmpty(HeadlessConfig.Deck1Code))
+        {
+            Debug.LogError("[Headless] deck1 was requested but not found — aborting");
+            Finish(2);
+            yield break;
+        }
+
         if (!OpenWriter())
         {
             Finish(3);
@@ -503,6 +512,10 @@ public class HeadlessRunner : MonoBehaviour
         Field(sb, "answered1", DecisionRouter.AnsweredCount(1)); sb.Append(',');
         Field(sb, "declined0", DecisionRouter.DeclinedCount(0)); sb.Append(',');
         Field(sb, "declined1", DecisionRouter.DeclinedCount(1)); sb.Append(',');
+        Field(sb, "unrouted0", DecisionRouter.UnroutedCount(0)); sb.Append(',');
+        Field(sb, "unrouted1", DecisionRouter.UnroutedCount(1)); sb.Append(',');
+        Field(sb, "unrouted_kinds0", DecisionRouter.UnroutedKinds(0)); sb.Append(',');
+        Field(sb, "unrouted_kinds1", DecisionRouter.UnroutedKinds(1)); sb.Append(',');
         Field(sb, "duration_s", duration); sb.Append(',');
         Field(sb, "deck0", deck0 != null ? deck0.DeckName : null); sb.Append(',');
         Field(sb, "deck1", deck1 != null ? deck1.DeckName : null);

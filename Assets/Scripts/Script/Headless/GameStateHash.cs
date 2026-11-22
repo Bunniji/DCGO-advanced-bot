@@ -3,7 +3,9 @@ using System.Globalization;
 using System.Text;
 
 /// <summary>
-/// Canonical fingerprint of the full game state.
+/// Canonical fingerprint of the game state: zones, permanents, phase and memory. Effect
+/// durations and once-per-turn flags are not covered, so equal hashes are necessary but
+/// not sufficient for two identical runs.
 ///
 /// Two purposes:
 ///   1. Reproducibility - the same seed replayed must produce the same hash at every step.

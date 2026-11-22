@@ -25,6 +25,20 @@ public static class DecisionRouter
     /// <summary>Decisions a provider declined, per seat - each one fell back to DCGO.</summary>
     static readonly int[] _declined = new int[2];
 
+    /// <summary>
+    /// Decisions of a bridged seat that never reached its provider: subset selections, the
+    /// order of simultaneous effects, the mulligan, declining a selection (e.g. a block),
+    /// and paths outside the ST-1/ST-2 pool. DCGO decides them. Unlike a decline, the
+    /// provider was never asked, so these need a counter of their own.
+    /// </summary>
+    static readonly int[] _unrouted = new int[2];
+
+    static readonly SortedDictionary<string, int>[] _unroutedByKind =
+    {
+        new SortedDictionary<string, int>(),
+        new SortedDictionary<string, int>()
+    };
+
     #region registration
 
     public static void Register(int playerId, IDecisionProvider provider)
@@ -82,12 +96,56 @@ public static class DecisionRouter
         return playerId >= 0 && playerId <= 1 ? _declined[playerId] : 0;
     }
 
+    public static int UnroutedCount(int playerId)
+    {
+        return playerId >= 0 && playerId <= 1 ? _unrouted[playerId] : 0;
+    }
+
+    /// <summary>"kind:count;kind:count", sorted by kind; empty when nothing was counted.</summary>
+    public static string UnroutedKinds(int playerId)
+    {
+        if (playerId < 0 || playerId > 1)
+        {
+            return "";
+        }
+
+        var parts = new List<string>();
+
+        foreach (KeyValuePair<string, int> entry in _unroutedByKind[playerId])
+        {
+            parts.Add(entry.Key + ":" + entry.Value);
+        }
+
+        return string.Join(";", parts);
+    }
+
+    /// <summary>
+    /// Records a decision of <paramref name="seat"/> that DCGO took without asking the seat's
+    /// provider. Does nothing for a seat without a provider, so the ordinary game and the
+    /// built-in bot are unaffected.
+    /// </summary>
+    public static void CountUnrouted(Player seat, string kind)
+    {
+        if (!HasProvider(seat))
+        {
+            return;
+        }
+
+        int id = seat.PlayerID;
+        _unrouted[id]++;
+
+        _unroutedByKind[id].TryGetValue(kind, out int count);
+        _unroutedByKind[id][kind] = count + 1;
+    }
+
     public static void ResetCounters()
     {
         for (int i = 0; i < 2; i++)
         {
             _answered[i] = 0;
             _declined[i] = 0;
+            _unrouted[i] = 0;
+            _unroutedByKind[i].Clear();
         }
     }
 

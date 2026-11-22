@@ -378,7 +378,8 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
         PlayLog.OnAddLog?.Invoke($"\n-------------Turn: 0-------------\n");
 
         // Earliest point at which seats and the game context both exist. Providers need the
-        // seat assignment before the first decision, and the mulligan is already a decision.
+        // seat assignment before the first decision. The mulligan that follows is decided by
+        // DCGO and counted as unrouted.
         DecisionRouter.ResetCounters();
         DecisionRouter.NotifyGameStart(gameContext);
 #if UNITY_EDITOR
@@ -426,6 +427,7 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
             {
                 if (GManager.instance.isAuto && GManager.instance.IsAI)
                 {
+                    DecisionRouter.CountUnrouted(player, "mulligan");
                     SetRedraw(player.PlayerID, RandomUtility.IsSucceedProbability(0.5f));
                 }
 
@@ -479,6 +481,7 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                         doRedraw = true;
                     }
 
+                    DecisionRouter.CountUnrouted(player, "mulligan");
                     SetRedraw(player.PlayerID, doRedraw);
                 }
                 #endregion

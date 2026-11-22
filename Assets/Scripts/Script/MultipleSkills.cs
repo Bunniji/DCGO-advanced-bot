@@ -255,6 +255,7 @@ public class MultipleSkills : MonoBehaviourPunCallbacks
                             #region AI
                             if (GManager.instance.IsAI)
                             {
+                                DecisionRouter.CountUnrouted(player, "effect_order");
                                 SetTargetSkill(player.PlayerID, 0);
                             }
                             #endregion
@@ -317,6 +318,7 @@ public class MultipleSkills : MonoBehaviourPunCallbacks
                             #region AI
                             if (GManager.instance.IsAI)
                             {
+                                DecisionRouter.CountUnrouted(player, "effect_order");
                                 SetTargetSkill(player.PlayerID, 0);
                             }
                             #endregion

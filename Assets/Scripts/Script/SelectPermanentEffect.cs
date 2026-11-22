@@ -653,6 +653,13 @@ public class SelectPermanentEffect : MonoBehaviourPunCallbacks
 
                     if (_maxCount == 1 && ValidCharas.Count > 0)
                     {
+                        // Selecting nothing is legal here - this is how "do not block" is
+                        // expressed - but the provider is offered only the permanents.
+                        if (_canNoSelect)
+                        {
+                            DecisionRouter.CountUnrouted(_selectPlayer, "decline_not_offered");
+                        }
+
                         int picked = DecisionRouter.ChoosePermanent(_selectPlayer, ValidCharas, "select_permanent");
 
                         if (picked >= 0)
@@ -671,7 +678,16 @@ public class SelectPermanentEffect : MonoBehaviourPunCallbacks
 
                                 answeredByProvider = true;
                             }
+                            else
+                            {
+                                DecisionRouter.CountUnrouted(_selectPlayer, "pick_rejected");
+                            }
                         }
+                    }
+                    else if (_maxCount > 1 && ValidCharas.Count > 0)
+                    {
+                        DecisionRouter.CountUnrouted(_selectPlayer,
+                            ValidCharas.Count > _maxCount ? "subset_permanent" : "subset_permanent_forced");
                     }
 
                     IList<int> indexList = Enumerable.Range(0, ValidCharas.Count).ToList();

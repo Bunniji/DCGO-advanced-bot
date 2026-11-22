@@ -12,7 +12,7 @@ using UnityEngine;
 ///   DCGO.exe -batchmode -nographics -dcgo-headless
 ///            -seed 12345 -games 10
 ///            -deck0 &lt;deckCode&gt; -deck1 &lt;deckCode&gt;
-///            -out results.jsonl -timescale 20 -timeout 300
+///            -out results.jsonl -timescale 8 -timeout 300
 /// </summary>
 public static class HeadlessConfig
 {

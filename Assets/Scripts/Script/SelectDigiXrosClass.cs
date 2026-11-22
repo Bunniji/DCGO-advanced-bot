@@ -536,6 +536,7 @@ public class SelectDigiXrosClass : MonoBehaviourPunCallbacks
                                     indexes.Add(k);
                                 }
 
+                                DecisionRouter.CountUnrouted(card.Owner, "digixros");
                                 SetTargetDigiXrossIndex(card.Owner.PlayerID, GameRandom.Range(0, indexes.Count));
                             }
                             #endregion
