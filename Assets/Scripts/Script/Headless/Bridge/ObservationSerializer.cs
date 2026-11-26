@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 /// <summary>
@@ -101,6 +102,16 @@ public static class ObservationSerializer
         w.Bool("can_hatch", SafeCanHatch(player));
         w.Bool("can_move", SafeCanMove(player));
 
+        // Effects on the player that last until a turn ends (e.g. ST1-14). praca-v1.2.
+        var effects = new List<string>();
+        AddEffects(effects, player.UntilEachTurnEndEffects, "each_turn_end");
+        AddEffects(effects, player.UntilOwnerTurnEndEffects, "owner_turn_end");
+        AddEffects(effects, player.UntilOpponentTurnEndEffects, "opponent_turn_end");
+        AddEffects(effects, player.UntilEndBattleEffects, "end_battle");
+        AddEffects(effects, player.UntilOwnerActivePhaseEffects, "owner_active_phase");
+        AddEffects(effects, player.UntilSecurityCheckEndEffects, "security_check_end");
+        w.Array("effects", effects);
+
         return w.Close();
     }
 
@@ -156,13 +167,70 @@ public static class ObservationSerializer
             w.Num("dp", permanent.DP);
             w.Num("level", permanent.Level);
 
-            // DCGO has no "entered play this turn" flag - summoning sickness lives inside
-            // CanAttackTargetDigimon. So we send the answers rather than the inputs: these
-            // are what a policy actually needs, and they are authoritative by construction.
+            // Summoning sickness lives inside CanAttackTargetDigimon, so the answers are sent
+            // rather than the inputs: they are what a policy needs and are authoritative.
             w.Bool("can_attack", SafeCanAttack(permanent));
             w.Bool("can_declare_skill", SafeCanDeclareSkill(permanent));
 
+            // praca-v1.2 (B-1): what the model needs to rebuild the permanent, not only its
+            // final DP - the turn it entered the field (Permanent.EnterFieldTurnCount), and its
+            // temporary effects (+3000 from ST1-13, "cannot attack / block" from ST2-14, ...)
+            // with how long they last.
+            w.Num("entered_turn", permanent.EnterFieldTurnCount);
+            var effects = new List<string>();
+            AddEffects(effects, permanent.UntilEachTurnEndEffects, "each_turn_end");
+            AddEffects(effects, permanent.UntilOwnerTurnEndEffects, "owner_turn_end");
+            AddEffects(effects, permanent.UntilOpponentTurnEndEffects, "opponent_turn_end");
+            AddEffects(effects, permanent.UntilEndBattleEffects, "end_battle");
+            AddEffects(effects, permanent.UntilEndAttackEffects, "end_attack");
+            AddEffects(effects, permanent.UntilNextUntapEffects, "next_untap");
+            AddEffects(effects, permanent.UntilOwnerDrawPhaseEffects, "owner_draw_phase");
+            AddEffects(effects, permanent.UntilOwnerTurnStartEffects, "owner_turn_start");
+            w.Array("effects", effects);
+
             yield return w.Close();
+        }
+    }
+
+    /// <summary>
+    /// One entry per temporary effect: duration (relative to the permanent's owner, as DCGO
+    /// stores it), effect class, source card and effect name. The amount (e.g. +3000) is not
+    /// read from the effect object: dcg_core knows every effect of the pool by its source card,
+    /// so the source and class identify the modifier.
+    /// </summary>
+    static void AddEffects(List<string> items, List<Func<EffectTiming, ICardEffect>> effects, string duration)
+    {
+        if (effects == null)
+        {
+            return;
+        }
+
+        foreach (Func<EffectTiming, ICardEffect> getEffect in effects)
+        {
+            ICardEffect effect = null;
+            CardSource source = null;
+
+            try
+            {
+                effect = getEffect != null ? getEffect(EffectTiming.None) : null;
+                source = effect != null ? effect.EffectSourceCard : null;
+            }
+            catch
+            {
+                effect = null;
+            }
+
+            if (effect == null)
+            {
+                continue;
+            }
+
+            var w = new BridgeJson.Writer();
+            w.Str("duration", duration);
+            w.Str("type", effect.GetType().Name);
+            w.Str("source", source != null ? source.CardID : "?");
+            w.Str("name", effect.EffectName ?? "");
+            items.Add(w.Close());
         }
     }
 

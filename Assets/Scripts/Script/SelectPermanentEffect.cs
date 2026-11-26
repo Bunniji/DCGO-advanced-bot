@@ -43,11 +43,22 @@ public class SelectPermanentEffect : MonoBehaviourPunCallbacks
         _customBackButtonMessage = null;
 
         _degenerationCount = 1;
+
+        _decisionContext = null;
     }
 
     public void SetIsLocal()
     {
         _isLocal = true;
+    }
+
+    // Name of the question for a bridged seat's provider (e.g. "block"). SetUp resets it, so
+    // it never leaks from one selection into the next.
+    string _decisionContext = null;
+
+    public void SetUpDecisionContext(string decisionContext)
+    {
+        _decisionContext = decisionContext;
     }
 
     public void SetDigiXros()
@@ -641,53 +652,51 @@ public class SelectPermanentEffect : MonoBehaviourPunCallbacks
                         }
                     }
 
-                    // Provider path, single-permanent selections only - see the matching note
-                    // in SelectCardEffect.AutoSelect for why subsets are out of scope.
-                    // This is the decision that actually matters in the ST-1/ST-2 pool: it is
-                    // where "which Digimon does this effect hit" is answered.
+                    // Provider path (praca-v1.2): every selection of a bridged seat - one
+                    // permanent, several ("up to N", ST1-15), or none ("do not block") - is asked
+                    // one pick at a time, as in dcg_core. This is the decision that matters most
+                    // in the ST-1/ST-2 pool: "which Digimon does this effect hit".
                     //
                     // A flag rather than an early return: the coroutine must still fall through
                     // to the WaitUntil/Dequeue below, because SetTargetFrames answers by
                     // queueing a PermanentSelection that the same coroutine then consumes.
                     bool answeredByProvider = false;
 
-                    if (_maxCount == 1 && ValidCharas.Count > 0)
+                    if (DecisionRouter.HasProvider(_selectPlayer) && ValidCharas.Count > 0)
                     {
-                        // Selecting nothing is legal here - this is how "do not block" is
-                        // expressed - but the provider is offered only the permanents.
-                        if (_canNoSelect)
+                        string sourceCardId = _cardEffect != null && _cardEffect.EffectSourceCard != null
+                            ? _cardEffect.EffectSourceCard.CardID : null;
+
+                        if (DecisionRouter.ChooseSequence(
+                                _selectPlayer, DecisionKind.SelectPermanent,
+                                _decisionContext ?? "select_permanent",
+                                sourceCardId, _cardEffect != null ? _cardEffect.EffectName : null,
+                                ValidCharas.Where(permanent => permanent != null && permanent.TopCard != null).ToList(),
+                                _maxCount, _canNoSelect, _canEndNotMax,
+                                _canTargetCondition_ByPreSelecetedList, _canEndSelectCondition,
+                                DecisionRouter.PermanentOption, out List<Permanent> chosenCharas))
                         {
-                            DecisionRouter.CountUnrouted(_selectPlayer, "decline_not_offered");
-                        }
-
-                        int picked = DecisionRouter.ChoosePermanent(_selectPlayer, ValidCharas, "select_permanent");
-
-                        if (picked >= 0)
-                        {
-                            List<Permanent> chosenCharas = new List<Permanent>() { ValidCharas[picked] };
-
-                            if ((_canEndSelectCondition == null || _canEndSelectCondition(chosenCharas))
-                                && ValidCharas[picked].TopCard != null)
+                            if (chosenCharas.Count == 0)
                             {
-                                Permanent chosen = ValidCharas[picked];
-
-                                SetTargetFrames(
-                                    _selectPlayer.PlayerID,
-                                    new bool[] { chosen.TopCard.Owner == GManager.instance.turnStateMachine.gameContext.TurnPlayer },
-                                    new int[] { chosen.TopCard.Owner.GetFieldPermanents().IndexOf(chosen) });
-
-                                answeredByProvider = true;
+                                // The same answer as the interface's "No Selection" button.
+                                SetTargetFrames(_selectPlayer.PlayerID, null, null);
                             }
                             else
                             {
-                                DecisionRouter.CountUnrouted(_selectPlayer, "pick_rejected");
+                                List<bool> chosenIsTurnPlayer = new List<bool>();
+                                List<int> chosenIndices = new List<int>();
+
+                                foreach (Permanent chosen in chosenCharas)
+                                {
+                                    chosenIsTurnPlayer.Add(chosen.TopCard.Owner == GManager.instance.turnStateMachine.gameContext.TurnPlayer);
+                                    chosenIndices.Add(chosen.TopCard.Owner.GetFieldPermanents().IndexOf(chosen));
+                                }
+
+                                SetTargetFrames(_selectPlayer.PlayerID, chosenIsTurnPlayer.ToArray(), chosenIndices.ToArray());
                             }
+
+                            answeredByProvider = true;
                         }
-                    }
-                    else if (_maxCount > 1 && ValidCharas.Count > 0)
-                    {
-                        DecisionRouter.CountUnrouted(_selectPlayer,
-                            ValidCharas.Count > _maxCount ? "subset_permanent" : "subset_permanent_forced");
                     }
 
                     IList<int> indexList = Enumerable.Range(0, ValidCharas.Count).ToList();

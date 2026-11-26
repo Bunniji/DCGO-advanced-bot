@@ -480,12 +480,34 @@ public class SelectHandEffect : MonoBehaviourPunCallbacks
                         }
                     }
 
-                    if (_canEndNotMax)
+                    // Provider path (praca-v1.2): one card, "up to N", or none - asked one pick
+                    // at a time, as in dcg_core. This is where "which card do I discard" is
+                    // answered, which for a deck that pays costs from hand is not a detail.
+                    bool answeredByProvider = false;
+
+                    if (DecisionRouter.HasProvider(_selectPlayer) && ValidCards.Count > 0)
+                    {
+                        string sourceCardId = _cardEffect != null && _cardEffect.EffectSourceCard != null
+                            ? _cardEffect.EffectSourceCard.CardID : null;
+
+                        if (DecisionRouter.ChooseSequence(
+                                _selectPlayer, DecisionKind.SelectCard, "select_hand",
+                                sourceCardId, _cardEffect != null ? _cardEffect.EffectName : null,
+                                ValidCards, _maxCount, _canNoSelect, _canEndNotMax,
+                                _canTargetCondition_ByPreSelecetedList, _canEndSelectCondition,
+                                DecisionRouter.CardOption, out List<CardSource> chosenCards))
+                        {
+                            // null = select nothing (read back as _noSelect below).
+                            SetTargetHandCards(_selectPlayer.PlayerID,
+                                chosenCards.Count == 0 ? null : chosenCards.Select(card => card.CardIndex).ToArray());
+
+                            answeredByProvider = true;
+                        }
+                    }
+
+                    if (!answeredByProvider && _canEndNotMax)
                     {
                         _noSelect = true;
-
-                        // "Up to N" from hand is never offered to a provider.
-                        DecisionRouter.CountUnrouted(_selectPlayer, "hand_up_to");
 
                         for (int maxCount = 0; maxCount < _maxCount; maxCount++)
                         {
@@ -524,39 +546,11 @@ public class SelectHandEffect : MonoBehaviourPunCallbacks
                         }  
                     }
 
-                    else
+                    else if (!answeredByProvider)
                     {
                         IList<int> indexList = Enumerable.Range(0, ValidCards.Count).ToList();
 
                         List<int> CardIDs = null;
-
-                        // Provider path, single-card selections only - same scope limit as in
-                        // SelectCardEffect.AutoSelect. This is where "which card do I discard"
-                        // is answered, which for a deck that pays costs from hand is not a
-                        // detail: the wrong discard can cost the game two turns later.
-                        if (_maxCount == 1 && ValidCards.Count > 0)
-                        {
-                            if (_canNoSelect)
-                            {
-                                DecisionRouter.CountUnrouted(_selectPlayer, "decline_not_offered");
-                            }
-
-                            int picked = DecisionRouter.ChooseCard(_selectPlayer, ValidCards, "select_hand");
-
-                            if (picked >= 0 && CanEndSelect(new List<CardSource>() { ValidCards[picked] }))
-                            {
-                                CardIDs = new List<int>() { ValidCards[picked].CardIndex };
-                            }
-                            else if (picked >= 0)
-                            {
-                                DecisionRouter.CountUnrouted(_selectPlayer, "pick_rejected");
-                            }
-                        }
-                        else if (_maxCount > 1 && ValidCards.Count > 0)
-                        {
-                            DecisionRouter.CountUnrouted(_selectPlayer,
-                                ValidCards.Count > _maxCount ? "subset_hand" : "subset_hand_forced");
-                        }
 
                         if (CardIDs == null && ValidCards.Count >= _maxCount)
                         {

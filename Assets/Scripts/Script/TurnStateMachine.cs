@@ -378,8 +378,8 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
         PlayLog.OnAddLog?.Invoke($"\n-------------Turn: 0-------------\n");
 
         // Earliest point at which seats and the game context both exist. Providers need the
-        // seat assignment before the first decision. The mulligan that follows is decided by
-        // DCGO and counted as unrouted.
+        // seat assignment before the first decision. The mulligan that follows is asked of a
+        // bridged seat's provider (praca-v1.2).
         DecisionRouter.ResetCounters();
         DecisionRouter.NotifyGameStart(gameContext);
 #if UNITY_EDITOR
@@ -427,8 +427,18 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
             {
                 if (GManager.instance.isAuto && GManager.instance.IsAI)
                 {
-                    DecisionRouter.CountUnrouted(player, "mulligan");
-                    SetRedraw(player.PlayerID, RandomUtility.IsSucceedProbability(0.5f));
+                    // A bridged seat decides its mulligan itself (praca-v1.2): value 0 = keep,
+                    // 1 = mulligan. Without a provider DCGO's coin flip stays as it was.
+                    if (DecisionRouter.ChooseBool(player, new List<bool>() { false, true }, "mulligan",
+                            out bool remoteRedraw, DecisionKind.Mulligan))
+                    {
+                        SetRedraw(player.PlayerID, remoteRedraw);
+                    }
+
+                    else
+                    {
+                        SetRedraw(player.PlayerID, RandomUtility.IsSucceedProbability(0.5f));
+                    }
                 }
 
                 else
@@ -481,7 +491,14 @@ public class TurnStateMachine : MonoBehaviourPunCallbacks
                         doRedraw = true;
                     }
 
-                    DecisionRouter.CountUnrouted(player, "mulligan");
+                    // Bridged seat: its own decision (0 = keep, 1 = mulligan). Otherwise the
+                    // built-in rule above - no level-3 Digimon in hand means mulligan.
+                    if (DecisionRouter.ChooseBool(player, new List<bool>() { false, true }, "mulligan",
+                            out bool remoteRedraw, DecisionKind.Mulligan))
+                    {
+                        doRedraw = remoteRedraw;
+                    }
+
                     SetRedraw(player.PlayerID, doRedraw);
                 }
                 #endregion

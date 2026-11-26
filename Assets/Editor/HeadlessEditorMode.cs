@@ -115,7 +115,7 @@ public class HeadlessEditorMode : EditorWindow
     /// bridge and batch mode are independent. Evaluation against human players runs the GUI
     /// at normal speed with a remote agent on one seat, which is bridge on, batch mode off.
     /// </summary>
-    static readonly string[] ProviderNames = { "none", "remote", "random" };
+    static readonly string[] ProviderNames = { "none", "remote", "random", "random-isolated" };
 
     void DrawBridgeSection()
     {
@@ -124,7 +124,8 @@ public class HeadlessEditorMode : EditorWindow
         EditorGUILayout.HelpBox(
             "none = DCGO's built-in bot (baseline B1)\n" +
             "remote = a Python agent over TCP loopback (start the server first)\n" +
-            "random = uniform over the enumerated legal actions (baseline B0)\n\n" +
+            "random = uniform over the enumerated legal actions (baseline B0)\n" +
+            "random-isolated = the same, with its own generator (transition test)\n\n" +
             "Works with or without batch mode. Seat 0 is the 'You' side.",
             MessageType.None);
 

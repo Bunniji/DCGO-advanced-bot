@@ -602,53 +602,35 @@ public class SelectCardEffect : MonoBehaviourPunCallbacks
                     }
                 }
 
-                // Provider path, single-card selections only.
-                //
-                // Scope limit, stated rather than hidden: asking for a SUBSET of size k is a
-                // different question from asking for one option out of n, and the whole bridge
-                // is built on the second. Every card selection reachable with the ST-1/ST-2
-                // pool asks for exactly one card, so supporting the general case would be
-                // untested code guarding against a situation these decks cannot produce.
-                // Multi-card selections keep DCGO's own random choice. They are not declines -
-                // the provider is never asked - and are counted by DecisionRouter.CountUnrouted.
-                if (_maxCount == 1 && ValidCards.Count > 0)
+                // Provider path (praca-v1.2): one card, several, or none - asked one pick at a
+                // time with "decline" / "end" where the effect allows them, as in dcg_core.
+                // The provider never sees a subset as a single question.
+                if (DecisionRouter.HasProvider(_selectPlayer) && ValidCards.Count > 0)
                 {
-                    // Selecting nothing is legal here, but the provider is offered only the cards.
-                    if (DecisionRouter.HasProvider(_selectPlayer) && _canNoSelect != null && _canNoSelect())
+                    string sourceCardId = _cardEffect != null && _cardEffect.EffectSourceCard != null
+                        ? _cardEffect.EffectSourceCard.CardID : null;
+
+                    if (DecisionRouter.ChooseSequence(
+                            _selectPlayer, DecisionKind.SelectCard, "select_card:" + _mode,
+                            sourceCardId, _cardEffect != null ? _cardEffect.EffectName : null,
+                            ValidCards, _maxCount, _canNoSelect != null && _canNoSelect(), _canEndNotMax,
+                            _canTargetCondition_ByPreSelecetedList, _canEndSelectCondition,
+                            DecisionRouter.CardOption, out List<CardSource> chosenCards))
                     {
-                        DecisionRouter.CountUnrouted(_selectPlayer, "decline_not_offered");
-                    }
+                        // Empty = select nothing, the same answer the panel gives with no card ticked.
+                        int[] chosenIndices = chosenCards.Select(card => card.CardIndex).ToArray();
 
-                    int picked = DecisionRouter.ChooseCard(_selectPlayer, ValidCards, "select_card:" + _mode);
-
-                    if (picked >= 0)
-                    {
-                        List<CardSource> chosenCards = new List<CardSource>() { ValidCards[picked] };
-
-                        if (_canEndSelectCondition == null || _canEndSelectCondition(chosenCards))
+                        if (GManager.instance.IsAI || _isLocal)
                         {
-                            int[] chosenIndices = new int[] { ValidCards[picked].CardIndex };
-
-                            if (GManager.instance.IsAI || _isLocal)
-                            {
-                                SetTargetCardAndIndicies(_selectPlayer.PlayerID, chosenIndices, null);
-                            }
-                            else
-                            {
-                                photonView.RPC("SetTargetCardAndIndicies", RpcTarget.All, _selectPlayer.PlayerID, chosenIndices, null);
-                            }
-
-                            return;
+                            SetTargetCardAndIndicies(_selectPlayer.PlayerID, chosenIndices, null);
+                        }
+                        else
+                        {
+                            photonView.RPC("SetTargetCardAndIndicies", RpcTarget.All, _selectPlayer.PlayerID, chosenIndices, null);
                         }
 
-                        // The pick failed the effect's end condition; DCGO decides instead.
-                        DecisionRouter.CountUnrouted(_selectPlayer, "pick_rejected");
+                        return;
                     }
-                }
-                else if (_maxCount > 1 && ValidCards.Count > 0)
-                {
-                    DecisionRouter.CountUnrouted(_selectPlayer,
-                        ValidCards.Count > _maxCount ? "subset_card" : "subset_card_forced");
                 }
 
                 IList<int> indexList = Enumerable.Range(0, ValidCards.Count).ToList();

@@ -41,6 +41,13 @@ public static class HeadlessConfig
     public static string OutputPath { get; private set; } = "headless-results.jsonl";
 
     /// <summary>
+    /// Where the decision log goes (praca-v1.2): one JSON line per decision of a bridged seat,
+    /// with the canonical state before it - input of the transition test against dcg_core.
+    /// Empty = off. Contains hidden information; never give it to an agent.
+    /// </summary>
+    public static string DecisionLogPath { get; private set; } = "";
+
+    /// <summary>
     /// Multiplier applied to Time.timeScale, which shortens every WaitForSeconds.
     ///
     /// 8 is a measured ceiling, not a guess. A sweep with -repeat-seed (5 games each,
@@ -236,6 +243,10 @@ public static class HeadlessConfig
                     Provider0 = NormaliseProvider(Next(args, i), Provider0);
                     break;
 
+                case "-decision-log":
+                    DecisionLogPath = Next(args, i) ?? DecisionLogPath;
+                    break;
+
                 case "-provider1":
                     Provider1 = NormaliseProvider(Next(args, i), Provider1);
                     break;
@@ -317,7 +328,7 @@ public static class HeadlessConfig
     }
 
     /// <summary>
-    /// Accepts only the three known provider names. An unrecognised value keeps the previous
+    /// Accepts only the known provider names (none, remote, random, random-isolated). An unrecognised value keeps the previous
     /// setting instead of silently disabling the agent, which would turn a typo in a script
     /// into a whole experiment quietly measuring the built-in bot instead.
     /// </summary>
@@ -330,7 +341,7 @@ public static class HeadlessConfig
 
         string lowered = value.Trim().ToLowerInvariant();
 
-        if (lowered == "none" || lowered == "remote" || lowered == "random")
+        if (lowered == "none" || lowered == "remote" || lowered == "random" || lowered == "random-isolated")
         {
             return lowered;
         }

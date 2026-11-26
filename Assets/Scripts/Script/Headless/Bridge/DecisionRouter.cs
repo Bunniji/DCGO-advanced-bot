@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -26,10 +27,12 @@ public static class DecisionRouter
     static readonly int[] _declined = new int[2];
 
     /// <summary>
-    /// Decisions of a bridged seat that never reached its provider: subset selections, the
-    /// order of simultaneous effects, the mulligan, declining a selection (e.g. a block),
-    /// and paths outside the ST-1/ST-2 pool. DCGO decides them. Unlike a decline, the
-    /// provider was never asked, so these need a counter of their own.
+    /// Decisions of a bridged seat that DCGO took itself without the provider's answer. Since
+    /// praca-v1.2 subsets, "select nothing", the order of simultaneous effects and the
+    /// mulligan are all routed, so what is left are paths outside the ST-1/ST-2 pool and
+    /// selections the effect itself rejects (pick_rejected, incomplete_set, no_legal_pick).
+    /// Unlike a decline, the provider was not the one that gave up, so these need a counter
+    /// of their own. A clean run has zero.
     /// </summary>
     static readonly int[] _unrouted = new int[2];
 
@@ -136,6 +139,10 @@ public static class DecisionRouter
 
         _unroutedByKind[id].TryGetValue(kind, out int count);
         _unroutedByKind[id][kind] = count + 1;
+
+        // In the decision log too: a replay of this game in dcg_core has to stop here, because
+        // DCGO decided on its own and may have drawn from the game's random sequence.
+        DecisionLog.Unrouted(seat, kind);
     }
 
     public static void ResetCounters()
@@ -156,6 +163,7 @@ public static class DecisionRouter
     public static void NotifyGameStart(GameContext ctx)
     {
         ResetMainPhase();
+        DecisionLog.BeginGame(ctx);
 
         for (int id = 0; id < 2; id++)
         {
@@ -172,6 +180,7 @@ public static class DecisionRouter
     public static void NotifyGameEnd(int winnerPlayerId, string reason)
     {
         ResetMainPhase();
+        DecisionLog.EndGame(winnerPlayerId, reason);
 
         for (int id = 0; id < 2; id++)
         {
@@ -190,6 +199,8 @@ public static class DecisionRouter
     static bool _actionQueued;
     static bool _declinedThisDecision;
     static List<DecisionOption> _pendingOptions;
+    static DecisionRequest _pendingRequest;
+    static string _pendingState;
 
     /// <summary>
     /// Called once per outer main-phase iteration, from ResetMainPhaseParameter. Ends the
@@ -201,6 +212,8 @@ public static class DecisionRouter
         _actionQueued = false;
         _declinedThisDecision = false;
         _pendingOptions = null;
+        _pendingRequest = null;
+        _pendingState = null;
     }
 
     /// <summary>
@@ -251,13 +264,19 @@ public static class DecisionRouter
                 return false;
             }
 
-            provider.BeginChoose(new DecisionRequest
+            _pendingRequest = new DecisionRequest
             {
                 Kind = DecisionKind.MainPhase,
                 Seat = player,
                 Options = _pendingOptions,
                 Context = "main_phase"
-            });
+            };
+
+            // The state is captured when the question is asked, not when the answer arrives:
+            // the replay compares the model's state at the same point.
+            _pendingState = DecisionLog.Enabled ? GameStateHash.Describe() : null;
+
+            provider.BeginChoose(_pendingRequest);
 
             _requestSent = true;
             return true;
@@ -272,6 +291,7 @@ public static class DecisionRouter
         {
             _declined[player.PlayerID]++;
             _declinedThisDecision = true;
+            DecisionLog.Decision("declined", _pendingRequest, -1, _pendingState);
             return false;
         }
 
@@ -281,8 +301,11 @@ public static class DecisionRouter
         {
             _declined[player.PlayerID]++;
             _declinedThisDecision = true;
+            DecisionLog.Decision("declined", _pendingRequest, -1, _pendingState);
             return false;
         }
+
+        DecisionLog.Decision("decision", _pendingRequest, index, _pendingState);
 
         // Goes through the queue rather than writing TurnStateMachine's fields directly.
         // The built-in bot takes the shortcut; using the queue means the agent travels the
@@ -301,8 +324,14 @@ public static class DecisionRouter
     /// <summary>
     /// Asks the seat's provider to pick one option. Returns -1 when there is no provider or
     /// the provider declined, in which case the caller keeps its original behaviour.
+    ///
+    /// A single option is answered here without asking (praca-v1.2): one option that cannot
+    /// be refused is not a decision, and dcg_core does not create a node for it either. The
+    /// decision log still records it, as "forced", so a replay stays step-aligned.
     /// </summary>
-    public static int Choose(DecisionKind kind, Player seat, List<DecisionOption> options, string context)
+    public static int Choose(DecisionKind kind, Player seat, List<DecisionOption> options, string context,
+                             string sourceCardId = null, string effectName = null,
+                             int pickedSoFar = 0, int maxPicks = 1)
     {
         IDecisionProvider provider = Get(seat);
 
@@ -311,26 +340,43 @@ public static class DecisionRouter
             return -1;
         }
 
-        int index = provider.Choose(new DecisionRequest
+        var request = new DecisionRequest
         {
             Kind = kind,
             Seat = seat,
             Options = options,
-            Context = context ?? ""
-        });
+            Context = context ?? "",
+            SourceCardId = sourceCardId,
+            EffectName = effectName,
+            PickedSoFar = pickedSoFar,
+            MaxPicks = maxPicks
+        };
+
+        string stateBefore = DecisionLog.Enabled ? GameStateHash.Describe() : null;
+
+        if (options.Count == 1)
+        {
+            DecisionLog.Decision("forced", request, 0, stateBefore);
+            return 0;
+        }
+
+        int index = provider.Choose(request);
 
         if (index < 0 || index >= options.Count)
         {
             _declined[seat.PlayerID]++;
+            DecisionLog.Decision("declined", request, -1, stateBefore);
             return -1;
         }
 
         _answered[seat.PlayerID]++;
+        DecisionLog.Decision("decision", request, index, stateBefore);
         return index;
     }
 
     /// <summary>Picks one integer out of a set. Returns false when the caller should decide itself.</summary>
-    public static bool ChooseInt(Player seat, List<int> values, string context, out int chosen)
+    public static bool ChooseInt(Player seat, List<int> values, string context, out int chosen,
+                                 string sourceCardId = null, string effectName = null)
     {
         chosen = 0;
 
@@ -352,7 +398,7 @@ public static class DecisionRouter
             });
         }
 
-        int index = Choose(DecisionKind.SelectInt, seat, options, context);
+        int index = Choose(DecisionKind.SelectInt, seat, options, context, sourceCardId, effectName);
 
         if (index < 0)
         {
@@ -374,7 +420,8 @@ public static class DecisionRouter
     /// which is exactly what happened on the first bridged run.
     /// </summary>
     public static bool ChooseBool(Player seat, List<bool> values, string context, out bool chosen,
-                                  DecisionKind kind = DecisionKind.SelectBool)
+                                  DecisionKind kind = DecisionKind.SelectBool,
+                                  string sourceCardId = null, string effectName = null)
     {
         chosen = false;
 
@@ -396,7 +443,7 @@ public static class DecisionRouter
             });
         }
 
-        int index = Choose(kind, seat, options, context);
+        int index = Choose(kind, seat, options, context, sourceCardId, effectName);
 
         if (index < 0)
         {
@@ -419,16 +466,9 @@ public static class DecisionRouter
 
         for (int i = 0; i < candidates.Count; i++)
         {
-            CardSource card = candidates[i];
-
-            options.Add(new DecisionOption
-            {
-                Kind = "card",
-                CardId = card != null ? card.CardID : "?",
-                CardIndex = i,
-                OwnerPlayerId = card != null && card.Owner != null ? card.Owner.PlayerID : -1,
-                Label = card != null ? card.CardID : "?"
-            });
+            DecisionOption option = CardOption(candidates[i]);
+            option.CardIndex = i;
+            options.Add(option);
         }
 
         return Choose(DecisionKind.SelectCard, seat, options, context);
@@ -446,20 +486,219 @@ public static class DecisionRouter
 
         for (int i = 0; i < candidates.Count; i++)
         {
-            Permanent permanent = candidates[i];
-            CardSource top = permanent != null ? permanent.TopCard : null;
-
-            options.Add(new DecisionOption
-            {
-                Kind = "permanent",
-                CardId = top != null ? top.CardID : "?",
-                CardIndex = i,
-                OwnerPlayerId = top != null && top.Owner != null ? top.Owner.PlayerID : -1,
-                Label = top != null ? top.CardID : "?"
-            });
+            DecisionOption option = PermanentOption(candidates[i]);
+            option.CardIndex = i;
+            options.Add(option);
         }
 
         return Choose(DecisionKind.SelectPermanent, seat, options, context);
+    }
+
+    #endregion
+
+    #region selections of several items or of none (praca-v1.2)
+
+    /// <summary>
+    /// A selection of up to <paramref name="maxCount"/> items, asked one pick at a time.
+    ///
+    /// This is how dcg_core models it too (ST1-15 Giga Destroyer is two successive single
+    /// choices with a "done" option), so both engines ask the same questions in the same
+    /// order. Each step offers the items not picked yet that the effect still accepts, plus:
+    ///   - "decline" before the first pick, when the effect allows selecting nothing
+    ///     (canNoSelect - e.g. "do not block");
+    ///   - "end" after a pick, when the effect allows stopping early (canEndNotMax) and the
+    ///     set picked so far is a legal end.
+    /// A step with one option and no way out is answered without asking (see Choose).
+    ///
+    /// Returns false when the seat has no provider or the provider declined; the caller then
+    /// keeps DCGO's original behaviour. On true, <paramref name="picked"/> may be empty,
+    /// which means "select nothing".
+    /// </summary>
+    public static bool ChooseSequence<T>(Player seat, DecisionKind kind, string context,
+                                         string sourceCardId, string effectName,
+                                         List<T> candidates, int maxCount,
+                                         bool canNoSelect, bool canEndNotMax,
+                                         Func<List<T>, T, bool> canAddToPicked,
+                                         Func<List<T>, bool> canEnd,
+                                         Func<T, DecisionOption> describe,
+                                         out List<T> picked) where T : class
+    {
+        picked = null;
+
+        if (!HasProvider(seat) || candidates == null || candidates.Count == 0 || maxCount <= 0)
+        {
+            return false;
+        }
+
+        var chosen = new List<T>();
+        bool stopped = false;
+
+        while (chosen.Count < maxCount)
+        {
+            var remaining = new List<T>();
+
+            foreach (T candidate in candidates)
+            {
+                if (candidate == null || chosen.Contains(candidate))
+                {
+                    continue;
+                }
+
+                if (canAddToPicked != null && !canAddToPicked(chosen, candidate))
+                {
+                    continue;
+                }
+
+                remaining.Add(candidate);
+            }
+
+            if (remaining.Count == 0)
+            {
+                break;
+            }
+
+            bool legalEnd = canEnd == null || canEnd(chosen);
+            bool mayStop = chosen.Count == 0
+                ? canNoSelect || (canEndNotMax && legalEnd)
+                : canEndNotMax && legalEnd;
+
+            var options = new List<DecisionOption>(remaining.Count + 1);
+
+            for (int i = 0; i < remaining.Count; i++)
+            {
+                DecisionOption option = describe(remaining[i]);
+                option.CardIndex = i;
+                options.Add(option);
+            }
+
+            if (mayStop)
+            {
+                options.Add(new DecisionOption
+                {
+                    Kind = chosen.Count == 0 ? "decline" : "end",
+                    Label = chosen.Count == 0 ? "select nothing" : "done",
+                    OwnerPlayerId = seat.PlayerID
+                });
+            }
+
+            int index = Choose(kind, seat, options, context, sourceCardId, effectName, chosen.Count, maxCount);
+
+            if (index < 0)
+            {
+                return false;
+            }
+
+            if (index >= remaining.Count)
+            {
+                stopped = true;
+                break;
+            }
+
+            chosen.Add(remaining[index]);
+        }
+
+        if (chosen.Count == 0 && !stopped && !canNoSelect)
+        {
+            // The effect accepts none of the candidates, yet selecting nothing is not allowed
+            // either. Nothing sensible to ask; DCGO decides as before.
+            CountUnrouted(seat, "no_legal_pick");
+            return false;
+        }
+
+        if (chosen.Count > 0 && chosen.Count < maxCount && !canEndNotMax)
+        {
+            // Ran out of candidates before reaching an exact count the effect requires. DCGO's
+            // own rule (CanEndSelect) rejects such a set, so DCGO decides as before.
+            CountUnrouted(seat, "incomplete_set");
+            return false;
+        }
+
+        if (chosen.Count > 0 && canEnd != null && !canEnd(chosen))
+        {
+            // Every pick was acceptable on its own but the set as a whole is not.
+            CountUnrouted(seat, "pick_rejected");
+            return false;
+        }
+
+        picked = chosen;
+        return true;
+    }
+
+    /// <summary>Option describing a permanent, addressed the same way as in the observation.</summary>
+    public static DecisionOption PermanentOption(Permanent permanent)
+    {
+        CardSource top = permanent != null ? permanent.TopCard : null;
+        Player owner = top != null ? top.Owner : null;
+
+        return new DecisionOption
+        {
+            Kind = "permanent",
+            CardId = top != null ? top.CardID : "?",
+            Label = top != null ? top.CardID : "?",
+            OwnerPlayerId = owner != null ? owner.PlayerID : -1,
+            FieldIndex = owner != null ? owner.GetFieldPermanents().IndexOf(permanent) : -1
+        };
+    }
+
+    /// <summary>Option describing a card, with the zone it is in - the model needs to know which copy.</summary>
+    public static DecisionOption CardOption(CardSource card)
+    {
+        Player owner = card != null ? card.Owner : null;
+
+        var option = new DecisionOption
+        {
+            Kind = "card",
+            CardId = card != null ? card.CardID : "?",
+            Label = card != null ? card.CardID : "?",
+            OwnerPlayerId = owner != null ? owner.PlayerID : -1
+        };
+
+        if (owner == null)
+        {
+            return option;
+        }
+
+        int index;
+
+        if ((index = owner.HandCards.IndexOf(card)) >= 0)
+        {
+            option.Zone = "hand";
+        }
+        else if ((index = owner.TrashCards.IndexOf(card)) >= 0)
+        {
+            option.Zone = "trash";
+        }
+        else if ((index = owner.SecurityCards.IndexOf(card)) >= 0)
+        {
+            option.Zone = "security";
+        }
+        else if ((index = owner.LibraryCards.IndexOf(card)) >= 0)
+        {
+            option.Zone = "deck";
+        }
+        else if ((index = owner.DigitamaLibraryCards.IndexOf(card)) >= 0)
+        {
+            option.Zone = "egg_deck";
+        }
+        else
+        {
+            Permanent permanent = card.PermanentOfThisCard();
+
+            if (permanent != null)
+            {
+                option.FieldIndex = owner.GetFieldPermanents().IndexOf(permanent);
+                option.Zone = permanent.TopCard == card ? "field" : "stack";
+                index = permanent.DigivolutionCards != null ? permanent.DigivolutionCards.IndexOf(card) : -1;
+            }
+            else
+            {
+                option.Zone = "other";
+                index = -1;
+            }
+        }
+
+        option.ZoneIndex = index;
+        return option;
     }
 
     #endregion

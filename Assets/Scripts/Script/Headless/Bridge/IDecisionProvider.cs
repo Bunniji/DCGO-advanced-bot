@@ -48,7 +48,11 @@ public sealed class DecisionOption
 {
     public const int None = -1;
 
-    /// <summary>"play", "digivolve", "attack", "activate_permanent", "activate_card", "pass", "value", "card", "permanent".</summary>
+    /// <summary>
+    /// "play", "digivolve", "attack", "activate_permanent", "activate_card", "pass", "value",
+    /// "card", "permanent", "skill" (one of several simultaneous effects), "decline" (select
+    /// nothing, e.g. do not block) and "end" (stop an "up to N" selection early).
+    /// </summary>
     public string Kind = "value";
 
     /// <summary>Catalog identity ("ST1-03"). This is what dcg_core matches on, not CardIndex.</summary>
@@ -77,6 +81,20 @@ public sealed class DecisionOption
 
     /// <summary>Owner of the card or permanent this option refers to.</summary>
     public int OwnerPlayerId = None;
+
+    /// <summary>
+    /// Index of a permanent in its owner's GetFieldPermanents() - the same addressing as
+    /// "action_index" in the observation. CardIndex on a selection option is only the
+    /// position in the candidate list, which says nothing about WHICH Digimon it is when
+    /// two of them carry the same card.
+    /// </summary>
+    public int FieldIndex = None;
+
+    /// <summary>Zone of a card option: hand, trash, security, deck, egg_deck, stack, field, other.</summary>
+    public string Zone;
+
+    /// <summary>Position of a card option inside its zone (for "stack": inside the permanent's digivolution cards).</summary>
+    public int ZoneIndex = None;
 
     /// <summary>
     /// Builds the engine-level action. Only meaningful for DecisionKind.MainPhase; the
@@ -119,6 +137,9 @@ public sealed class DecisionOption
         if (SkillIndex != None) w.Num("skill", SkillIndex);
         if (AttackerIndex != None) w.Num("attacker", AttackerIndex);
         if (OwnerPlayerId != None) w.Num("owner", OwnerPlayerId);
+        if (FieldIndex != None) w.Num("field_index", FieldIndex);
+        if (Zone != null) w.Str("zone", Zone);
+        if (ZoneIndex != None) w.Num("zone_index", ZoneIndex);
 
         // These two are written unconditionally for the kinds that own them, because -1 is a
         // legitimate payload there - "attack the security stack", or a count of -1 - and the
@@ -143,8 +164,20 @@ public sealed class DecisionRequest
     /// <summary>Free-form marker of where in the rules this question came from, for traces.</summary>
     public string Context = "";
 
-    /// <summary>How many options must be picked. Only SelectCard ever asks for more than one.</summary>
+    /// <summary>How many options must be picked. Always 1 since praca-v1.2: subsets are asked one pick at a time.</summary>
     public int PickCount = 1;
+
+    /// <summary>Card whose effect asks the question (null for phase decisions).</summary>
+    public string SourceCardId;
+
+    /// <summary>Name of that effect, for traces and for telling two effects of one card apart.</summary>
+    public string EffectName;
+
+    /// <summary>For a pick inside a subset selection: how many items were already picked.</summary>
+    public int PickedSoFar;
+
+    /// <summary>For a subset selection: the most that may be picked in total.</summary>
+    public int MaxPicks = 1;
 }
 
 /// <summary>

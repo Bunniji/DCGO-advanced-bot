@@ -255,8 +255,13 @@ public class MultipleSkills : MonoBehaviourPunCallbacks
                             #region AI
                             if (GManager.instance.IsAI)
                             {
-                                DecisionRouter.CountUnrouted(player, "effect_order");
-                                SetTargetSkill(player.PlayerID, 0);
+                                // A bridged seat chooses which of the simultaneous effects resolves
+                                // first (praca-v1.2). Without a provider DCGO takes the first, as before.
+                                int routedSkill = DecisionRouter.HasProvider(player)
+                                    ? DecisionRouter.Choose(DecisionKind.SelectSkill, player,
+                                        SkillOptions(player, skillInfos_active), "effect_order")
+                                    : -1;
+                                SetTargetSkill(player.PlayerID, routedSkill >= 0 ? routedSkill : 0);
                             }
                             #endregion
                         }
@@ -318,8 +323,13 @@ public class MultipleSkills : MonoBehaviourPunCallbacks
                             #region AI
                             if (GManager.instance.IsAI)
                             {
-                                DecisionRouter.CountUnrouted(player, "effect_order");
-                                SetTargetSkill(player.PlayerID, 0);
+                                // A bridged seat chooses which of the simultaneous effects resolves
+                                // first (praca-v1.2). Without a provider DCGO takes the first, as before.
+                                int routedSkill = DecisionRouter.HasProvider(player)
+                                    ? DecisionRouter.Choose(DecisionKind.SelectSkill, player,
+                                        SkillOptions(player, skillInfos_active), "effect_order")
+                                    : -1;
+                                SetTargetSkill(player.PlayerID, routedSkill >= 0 ? routedSkill : 0);
                             }
                             #endregion
                         }
@@ -422,6 +432,29 @@ public class MultipleSkills : MonoBehaviourPunCallbacks
                 break;
             }
         }
+    }
+
+    // One option per active effect for DecisionRouter, identified by the card it comes from.
+    static List<DecisionOption> SkillOptions(Player player, List<SkillInfo> skillInfos)
+    {
+        var options = new List<DecisionOption>(skillInfos.Count);
+
+        for (int i = 0; i < skillInfos.Count; i++)
+        {
+            ICardEffect effect = skillInfos[i] != null ? skillInfos[i].CardEffect : null;
+            CardSource source = effect != null ? effect.EffectSourceCard : null;
+
+            options.Add(new DecisionOption
+            {
+                Kind = "skill",
+                SkillIndex = i,
+                CardId = source != null ? source.CardID : "?",
+                Label = effect != null ? effect.EffectName : "?",
+                OwnerPlayerId = player != null ? player.PlayerID : -1
+            });
+        }
+
+        return options;
     }
 
     [PunRPC]

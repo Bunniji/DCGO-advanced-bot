@@ -360,6 +360,10 @@ public class AttackProcess : MonoBehaviourPunCallbacks
                 cardEffect: null);
 
             selectPermanentEffect.SetUpCustomMessage("Select 1 Digimon that will block.", "The opponent is selecting 1 Digimon that will block.");
+
+            // A bridged defender is asked "block" (with "do not block" as an option when the
+            // attacker has no Collision) rather than an anonymous permanent selection.
+            selectPermanentEffect.SetUpDecisionContext("block");
             
             if(!IsBlocking)
                 selectPermanentEffect.SetUpCustomBackButtonMessage("Not Block");

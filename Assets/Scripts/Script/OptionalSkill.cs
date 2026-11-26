@@ -114,7 +114,9 @@ public class OptionalSkill : MonoBehaviourPunCallbacks
                 // right, and DCGO's fixed 90% acceptance is exactly the kind of hard-coded
                 // taste an agent is supposed to replace.
                 if (DecisionRouter.ChooseBool(player, new List<bool>() { true, false },
-                        "optional_skill", out bool remoteUse))
+                        "optional_skill", out bool remoteUse, DecisionKind.SelectBool,
+                        cardEffect.EffectSourceCard != null ? cardEffect.EffectSourceCard.CardID : null,
+                        cardEffect.EffectName))
                 {
                     SetUseOptional(player.PlayerID, remoteUse);
                 }

@@ -197,6 +197,14 @@ public sealed class RemoteDecisionProvider : IDecisionProvider
         w.Str("context", request.Context);
         w.Num("seat", request.Seat != null ? request.Seat.PlayerID : -1);
         w.Num("pick", request.PickCount);
+        if (request.SourceCardId != null) w.Str("source", request.SourceCardId);
+        if (request.EffectName != null) w.Str("effect", request.EffectName);
+        if (request.MaxPicks > 1)
+        {
+            // One pick of a subset selection (praca-v1.2): how far along it is.
+            w.Num("picked_so_far", request.PickedSoFar);
+            w.Num("max_picks", request.MaxPicks);
+        }
         w.Array("options", options);
 
         // The observation goes with every request rather than being cached on the far side:

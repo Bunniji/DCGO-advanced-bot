@@ -77,6 +77,9 @@ public static class DecisionBridge
             case "random":
                 return new RandomLegalProvider();
 
+            case "random-isolated":
+                return new RandomIsolatedProvider(seat);
+
             case "remote":
                 if (seat == 0)
                 {
